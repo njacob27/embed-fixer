@@ -45,6 +45,7 @@ input:focus,select:focus{outline:2px solid var(--blue);border-color:transparent}
 .chk{display:flex;gap:10px;align-items:center;margin-top:10px;color:var(--text);cursor:pointer}
 .chk input{width:20px;height:20px}
 pre{background:#0d1426;border:1px solid var(--line);border-radius:12px;padding:14px;margin:0 0 12px;white-space:pre-wrap;word-break:break-all;font:14px/1.55 ui-monospace,Menlo,Consolas,monospace}
+.det{color:var(--mute);font-size:14px;margin-top:6px;min-height:20px}.det.ok{color:var(--green)}.det.bad{color:var(--red)}
 .err{color:var(--red);margin-top:8px;font-size:14px;min-height:20px}
 .ok{color:var(--green)}
 .prev li{margin:6px 0;color:var(--mute);font-size:14px;word-break:break-all;list-style:none}
@@ -65,6 +66,7 @@ label.l{display:block;color:var(--mute);font-size:14px;margin-bottom:6px}
       <button class="btn ghost" id="paste">Paste</button>
     </div>
     <div class="err" id="err"></div>
+    <div class="det" id="det"></div>
   </div>
 
   <div class="card">
@@ -147,12 +149,12 @@ function build(){
     embeds.map((e,i)=>'<li><span class="tag '+e.cls+'">'+(i+1)+'</span>'+e.label+'<br>'+e.url+'</li>').join('');
 }
 
-$('url').addEventListener('input',build);
+$('url').addEventListener('input',onLink);
 ['sep'].forEach(id=>$(id).addEventListener('change',build));
 $('plus').onclick=()=>{if(media.length<4){media.push('video');renderItems();build()}};
 $('minus').onclick=()=>{if(media.length>0){media.pop();renderItems();build()}};
 $('paste').onclick=async()=>{
-  try{$('url').value=await navigator.clipboard.readText();build()}catch(e){$('err').textContent='Clipboard blocked: paste into the box manually.'}
+  try{$('url').value=(await navigator.clipboard.readText()).trim();onLink()}catch(e){$('err').textContent='Clipboard blocked: paste into the box manually.'}
 };
 $('copy').onclick=async()=>{
   if(!out){return}
@@ -162,6 +164,31 @@ $('copy').onclick=async()=>{
   $('msg').textContent='Copied ✓';setTimeout(()=>$('msg').textContent='',1800);
 };
 try{$('logo').src=document.querySelector('link[rel=icon]').href}catch(e){}
+let lastBase=null,timer=null;
+function setDet(t,c){const d=$('det');d.textContent=t;d.className='det '+(c||'')}
+function curId(){const m=re.exec($('url').value.trim());return m?m[2]:null}
+async function detect(){
+  const id=curId();if(!id)return;
+  setDet('Detecting media…');
+  try{
+    const r=await fetch('https://api.fxtwitter.com/status/'+id);
+    if(!r.ok)throw new Error('http '+r.status);
+    const j=await r.json();
+    if(curId()!==id)return; // link changed while loading
+    const all=(j.tweet&&j.tweet.media&&j.tweet.media.all)||[];
+    if(all.length){
+      media=all.slice(0,4).map(x=>x.type==='photo'?'photo':'video');
+      setDet('Detected '+media.length+' item'+(media.length>1?'s':'')+' ✓','ok');
+    }else setDet('No media found on that tweet. Set it manually if that’s wrong.','bad');
+  }catch(e){setDet('Couldn’t look that tweet up. Set the media manually.','bad')}
+  renderItems();build();
+}
+function onLink(){
+  build();
+  const id=curId();
+  if(id&&id!==lastBase){lastBase=id;clearTimeout(timer);timer=setTimeout(detect,300)}
+  if(!id){lastBase=null;setDet('')}
+}
 renderItems();build();
 </script>
 </body>
